@@ -1,175 +1,188 @@
 <!DOCTYPE html>
 <html lang="en-US">
-
 <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Syntax Sirens Chat Bot</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Syntax Sirens Chat Bot</title>
 
-    <!-- Bootstrap CSS -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet"
-        integrity="sha384-sRIl4kxILFvY47J16cr9ZwB07vP4J8+LH7qKQnuqkuIAvNWLzeN8tE5YBujZqJLB" crossorigin="anonymous">
-
-    <!-- Custom CSS -->
-    <link rel="stylesheet" href="../Style/awesome.css">
+  <!-- Your Bootstrap-like CSS -->
+  <link rel="stylesheet" href="../Style/awesome.css" />
 </head>
 
 <body>
-    <!-- Navigation Bar -->
-    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
-        <div class="container-fluid">
-            <a class="navbar-brand d-flex align-items-center" href="mailto:SyntaxSirens@gmail.com">
-                Syntax Sirens Chat Bot
-            </a>
-        </div>
-    </nav>
+  <a class="skip-link" href="#main">Skip to main content</a>
 
-    <!-- Main Title -->
+  <nav class="navbar navbar-dark bg-dark" aria-label="Primary">
+    <div class="container-fluid">
+      <a class="navbar-brand" href="mailto:SyntaxSirens@gmail.com">
+        Syntax Sirens Chat Bot
+      </a>
+    </div>
+  </nav>
+
+  <main id="main" class="container my-5" tabindex="-1">
     <h1 class="text-center">WCAG Standards Checker</h1>
-    <div class="container my-5">
-        <div class="row">
-            <div class="col-lg-8 mx-auto">
-                <p class="text-center text-muted">
-                    Below you may see everything that is checked for WCAG compliance.
-                </p>
 
-                <!-- URL Input Section -->
-                <div class="card mb-4">
-                    <div class="card-body">
-                        <h5 class="card-title">Enter URL to Check</h5>
-                        <form id="urlForm" class="d-flex gap-2">
-                            <input 
-                                type="url" 
-                                id="urlInput" 
-                                class="form-control" 
-                                placeholder="Enter website URL (e.g., https://example.com)"
-                                required
-                            >
-                            <button type="submit" class="btn btn-primary">Submit url</button>
-                        </form>
-                        <div id="errorMessage" class="alert alert-danger mt-2" style="display: none;"></div>
-                    </div>
-                </div>
+    <p class="text-center text-muted">
+      Below you may see everything that is checked for WCAG compliance.
+    </p>
 
-                <!-- Loading Indicator (i.e if we need something before the ai agent is ready with their answer)-->
-                <div id="loadingIndicator" class="text-center my-4" style="display: none;">
-                    <div class="spinner-border text-primary" role="status">
-                        <span class="visually-hidden">Loading...</span>
-                    </div>
-                    <p class="mt-2">Analyzing website...</p>
-                </div>
+    <!-- URL Input Section -->
+    <div class="card mb-4">
+      <div class="card-body">
+        <h2 class="h5 card-title">Enter URL to Check</h2>
 
-                <!-- Results Container -->
-                <div id="resultsContainer" style="display: none;">
-                    <div class="row">
-                        <!-- Findings Column -->
-                        <div class="col-md-6 mb-3">
-                            <div class="card h-100 border-primary">
-                                <div class="card-header bg-primary text-white">
-                                    <h5 class="mb-0">Findings</h5>
-                                </div>
-                                <div class="card-body">
-                                    <div id="findingsContent" class="compliance-text">
-                        </div>
-                                </div>
-                            </div>
-                        </div>
+        <form id="urlForm" class="d-flex gap-2" novalidate>
+          <div class="flex-grow-1">
+            <label for="urlInput" class="form-label">Website URL</label>
+            <input
+              type="url"
+              id="urlInput"
+              class="form-control"
+              inputmode="url"
+              autocomplete="url"
+              placeholder="https://example.com"
+              required
+              aria-describedby="urlHelp errorMessage"
+            />
+            <div id="urlHelp" class="form-text">Enter a full URL including https://</div>
+          </div>
 
-                        <!-- Recommendations Column -->
-                        <div class="col-md-6 mb-3">
-                            <div class="card h-100 border-success">
-                                <div class="card-header bg-success text-white">
-                                    <h5 class="mb-0">Recommendations</h5>
-                                </div>
-                                <div class="card-body">
-                                    <div id="recommendationsContent" class="compliance-text">
-                        </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
+          <button type="submit" class="btn btn-primary align-self-end">
+            Check accessibility
+          </button>
+        </form>
+
+        <div id="errorMessage" class="alert alert-danger mt-2" role="alert" tabindex="-1" hidden></div>
+      </div>
     </div>
 
-    <script>
-        document.getElementById('urlForm').addEventListener('submit', async function(e) {
-            e.preventDefault();
-            
-            const urlInput = document.getElementById('urlInput').value;
-            const errorMessage = document.getElementById('errorMessage');
-            const loadingIndicator = document.getElementById('loadingIndicator');
-            const resultsContainer = document.getElementById('resultsContainer');
-            
-            // Reset UI
-            errorMessage.style.display = 'none';
-            resultsContainer.style.display = 'none';
-            loadingIndicator.style.display = 'block';
-            
-            try {
-                // Call our AI agent API
-                const response = await fetch('/api/check-wcag', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ url: urlInput })
-                });
-                
-                if (!response.ok) {
-                    throw new Error(`Server error: ${response.status}`);
-                }
-                
-                const data = await response.json();
-                
-                // Populate findings
-                document.getElementById('findingsContent').innerHTML = formatText(data.findings);
-                
-                // Populate recommendations
-                document.getElementById('recommendationsContent').innerHTML = formatText(data.recommendations);
-                
-                // Show results
-                loadingIndicator.style.display = 'none';
-                resultsContainer.style.display = 'block';
-                
-            } catch (error) {
-                loadingIndicator.style.display = 'none';
-                errorMessage.textContent = `Error: ${error.message}. Make sure the API endpoint is configured.`;
-                errorMessage.style.display = 'block';
-                console.error('Error:', error);
-            }
-        });
-        
-        function formatText(text) {
-            if (!text) return '<p class="text-muted">No data available</p>';
-            
-            // Convert line breaks to paragraphs
-            return text
-                .split('\n\n')
-                .filter(para => para.trim())
-                .map(para => `<p>${para.trim()}</p>`)
-                .join('');
-        }
-    </script>
+    <!-- Loading Indicator -->
+    <div id="loadingIndicator" class="text-center my-4" role="status" aria-live="polite" aria-atomic="true" hidden>
+      <div class="spinner-border text-primary" aria-hidden="true"></div>
+      <p class="mt-2">Analyzing website…</p>
+    </div>
 
-    <footer class="row row-cols-1 row-cols-sm-2 row-cols-md-5 py-5 my-5 border-top">
-        <div class="col mb-3"> <a href="/"
-                class="d-flex align-items-center mb-3 link-body-emphasis text-decoration-none" aria-label="Bootstrap">
-                <svg class="bi me-2" width="40" height="32" aria-hidden="true">
-                    <use xlink:href="#bootstrap"></use>
-                </svg> </a>
-            <p class="text-body-secondary">© 2026</p>
+    <!-- Results Container -->
+    <section id="resultsContainer" aria-live="polite" aria-atomic="false" hidden>
+      <h2 id="resultsTitle" tabindex="-1">Results</h2>
+
+      <div class="row">
+        <div class="col-md-6 mb-3">
+          <div class="card h-100 border-primary">
+            <div class="card-header bg-primary text-white">
+              <h3 class="mb-0">Findings</h3>
+            </div>
+            <div class="card-body">
+              <div id="findingsContent" class="compliance-text"></div>
+            </div>
+          </div>
         </div>
-        <div class="col mb-3"></div>
+
+        <div class="col-md-6 mb-3">
+          <div class="card h-100 border-success">
+            <div class="card-header bg-success text-white">
+              <h3 class="mb-0">Recommendations</h3>
+            </div>
+            <div class="card-body">
+              <div id="recommendationsContent" class="compliance-text"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <footer class="border-top py-5 my-5">
+      <div class="row row-cols-1 row-cols-sm-2 row-cols-md-5">
         <div class="col mb-3">
-            <h5>Contact us</h5>
-            <ul class="nav flex-column">
-                <li class="nav-item mb-2"><a href="#" class="nav-link p-0 text-body-secondary">Location</a></li>
-                <li class="nav-item mb-2"><a href="#" class="nav-link p-0 text-body-secondary">Phone number</a></li>
-                <li class="nav-item mb-2"><a href="#" class="nav-link p-0 text-body-secondary">Email address</a></li>
-            </ul>
+          <p class="text-muted">© 2026</p>
         </div>
+
+        <div class="col mb-3"></div>
+
+        <div class="col mb-3">
+          <h2 class="h5">Contact us</h2>
+          <ul class="nav flex-column">
+            <li class="nav-item mb-2"><a href="#" class="nav-link p-0 text-muted">Location</a></li>
+            <li class="nav-item mb-2"><a href="#" class="nav-link p-0 text-muted">Phone number</a></li>
+            <li class="nav-item mb-2"><a href="#" class="nav-link p-0 text-muted">Email address</a></li>
+          </ul>
+        </div>
+      </div>
     </footer>
+  </main>
+
+  <script>
+    const form = document.getElementById("urlForm");
+    const urlInputEl = document.getElementById("urlInput");
+    const errorEl = document.getElementById("errorMessage");
+    const loadingEl = document.getElementById("loadingIndicator");
+    const resultsEl = document.getElementById("resultsContainer");
+    const resultsTitleEl = document.getElementById("resultsTitle");
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+
+      const urlValue = urlInputEl.value.trim();
+
+      // Reset UI
+      errorEl.hidden = true;
+      errorEl.textContent = "";
+      urlInputEl.removeAttribute("aria-invalid");
+
+      resultsEl.hidden = true;
+      loadingEl.hidden = false;
+
+      // Simple front-end validation
+      if (!urlValue) {
+        loadingEl.hidden = true;
+        urlInputEl.setAttribute("aria-invalid", "true");
+        errorEl.textContent = "Please enter a URL.";
+        errorEl.hidden = false;
+        errorEl.focus();
+        return;
+      }
+
+      try {
+        const response = await fetch("/api/check-wcag", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url: urlValue }),
+        });
+
+        if (!response.ok) throw new Error(`Server error: ${response.status}`);
+
+        const data = await response.json();
+
+        document.getElementById("findingsContent").innerHTML = formatText(data.findings);
+        document.getElementById("recommendationsContent").innerHTML = formatText(data.recommendations);
+
+        loadingEl.hidden = true;
+        resultsEl.hidden = false;
+        resultsTitleEl.focus();
+      } catch (error) {
+        loadingEl.hidden = true;
+        urlInputEl.setAttribute("aria-invalid", "true");
+        errorEl.textContent = `Error: ${error.message}. Make sure the API endpoint is configured.`;
+        errorEl.hidden = false;
+        errorEl.focus();
+        console.error(error);
+      }
+    });
+
+    function formatText(text) {
+      if (!text) return '<p class="text-muted">No data available</p>';
+      return text
+        .split("\n\n")
+        .filter((p) => p.trim())
+        .map((p) => `<p>${escapeHtml(p.trim())}</p>`)
+        .join("");
+    }
+
+    // Prevent accidental HTML injection
+    function escapeHtml(str) {
+      return str.replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[m]));
+    }
+  </script>
 </body>
 </html>
