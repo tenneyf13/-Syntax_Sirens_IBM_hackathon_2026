@@ -1,1 +1,49 @@
-
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WCAG Checker - Syntax Sirens</title>
+    <link rel="stylesheet" href="/static/Style/awesome.css">
+</head>
+<body>
+    <div class="container">
+        <h1>WCAG Accessibility Checker</h1>
+        <p>Enter a URL to check for accessibility issues</p>
+        
+        <form id="wcag-form">
+            <input type="url" id="url-input" placeholder="https://example.com" required>
+            <button type="submit">Check Accessibility</button>
+        </form>
+        
+        <div id="results" style="display:none;">
+            <h2>Results</h2>
+            <div id="findings"></div>
+            <div id="recommendations"></div>
+        </div>
+    </div>
+    
+    <script>
+        document.getElementById('wcag-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const url = document.getElementById('url-input').value;
+            const results = document.getElementById('results');
+            
+            try {
+                const response = await fetch('http://localhost:8003/api/check-wcag', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({url: url})
+                });
+                
+                const data = await response.json();
+                document.getElementById('findings').innerHTML = `<h3>Findings:</h3><pre>${data.findings}</pre>`;
+                document.getElementById('recommendations').innerHTML = `<h3>Recommendations:</h3><pre>${data.recommendations}</pre>`;
+                results.style.display = 'block';
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        });
+    </script>
+</body>
+</html>
