@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, HttpUrl
 import httpx
 import os
+import sys
 from dotenv import load_dotenv
 from pathlib import Path
 
@@ -12,6 +13,11 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent
 # Load environment variables
 load_dotenv()
+
+# Add backend directory to Python path so we can import watson_orchestrate_service
+backend_dir = Path(__file__).resolve().parent
+if str(backend_dir) not in sys.path:
+    sys.path.insert(0, str(backend_dir))
 
 # Import Watson Orchestrate service
 try:
@@ -25,8 +31,12 @@ except ImportError as e:
 
 app = FastAPI(title="WCAG Checker Backend", version="1.0.0")
 
-# Mount static files
-app.mount("/static", StaticFiles(directory="Frontend"), name="static")
+# Mount static files - use absolute path relative to BASE_DIR
+frontend_path = BASE_DIR / "Frontend"
+if frontend_path.exists():
+    app.mount("/static", StaticFiles(directory=str(frontend_path)), name="static")
+else:
+    print(f"⚠️  Frontend directory not found at {frontend_path}")
 
 # --- CORS: allow your frontend domain to call the backend ---
 # For hackathon, you can allow "*" temporarily. Better: set to your frontend URL.
@@ -46,7 +56,11 @@ class CheckWCAGRequest(BaseModel):
 
 @app.get("/")
 def root():
-    return FileResponse("Frontend/Page/homePage.html")
+    homepage_path = BASE_DIR / "Frontend" / "Page" / "homePage.html"
+    if homepage_path.exists():
+        return FileResponse(str(homepage_path))
+    else:
+        return {"message": "Frontend not found", "path": str(homepage_path)}
 
 @app.get("/api")
 def api_info():
