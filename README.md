@@ -1,1 +1,0 @@
-# -Syntax_Sirens_IBM_hackathon_2026

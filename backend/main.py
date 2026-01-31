@@ -1,11 +1,19 @@
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import PlainTextResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, HttpUrl
 import httpx
 import os
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 app = FastAPI(title="WCAG Checker Backend", version="1.0.0")
+
+# Mount static files
+app.mount("/static", StaticFiles(directory="Frontend"), name="static")
 
 # --- CORS: allow your frontend domain to call the backend ---
 # For hackathon, you can allow "*" temporarily. Better: set to your frontend URL.
@@ -23,9 +31,29 @@ class FetchRequest(BaseModel):
 class CheckWCAGRequest(BaseModel):
     url: HttpUrl
 
+@app.get("/")
+def root():
+    return FileResponse("Frontend/Page/homePage.html")
+
+@app.get("/api")
+def api_info():
+    return {"message": "WCAG Checker Backend", "version": "1.0.0", "endpoints": ["/health", "/fetch", "/api/check-wcag"]}
+
 @app.get("/health")
 def health():
     return {"ok": True}
+
+@app.get("/favicon.ico")
+def favicon():
+    return {"message": "No favicon"}
+
+@app.get("/doc")
+def doc_redirect():
+    return {"message": "Use /docs for API documentation"}
+
+@app.get("/items/{item_id}")
+def read_item(item_id: int, q: str = None):
+    return {"item_id": item_id, "q": q, "message": "This is a test endpoint"}
 
 @app.post("/fetch", response_class=PlainTextResponse)
 async def fetch(req: FetchRequest):
