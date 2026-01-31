@@ -6,7 +6,10 @@ from pydantic import BaseModel, HttpUrl
 import httpx
 import os
 from dotenv import load_dotenv
+from pathlib import Path
 
+# absolute path for frontend
+BASE_DIR = Path(__file__).resolve().parent.parent
 # Load environment variables
 load_dotenv()
 

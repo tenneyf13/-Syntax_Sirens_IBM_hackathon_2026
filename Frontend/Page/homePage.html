@@ -119,6 +119,7 @@
     const loadingEl = document.getElementById("loadingIndicator");
     const resultsEl = document.getElementById("resultsContainer");
     const resultsTitleEl = document.getElementById("resultsTitle");
+    const API_BASE = "http://127.0.0.1:8000"; // FastAPI
 
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
@@ -144,7 +145,7 @@
       }
 
       try {
-        const response = await fetch("/api/check-wcag", {
+        const response = await fetch(`${API_BASE}/api/check-wcag`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ url: urlValue }),
