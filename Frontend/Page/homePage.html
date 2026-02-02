@@ -28,20 +28,34 @@
             e.preventDefault();
             const url = document.getElementById('url-input').value;
             const results = document.getElementById('results');
+            const button = document.querySelector('button[type="submit"]');
+            
+            // Show loading state
+            button.textContent = 'Analyzing...';
+            button.disabled = true;
             
             try {
-                const response = await fetch('http://localhost:8003/api/check-wcag', {
+                const response = await fetch('/api/check-wcag', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({url: url})
                 });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
                 
                 const data = await response.json();
                 document.getElementById('findings').innerHTML = `<h3>Findings:</h3><pre>${data.findings}</pre>`;
                 document.getElementById('recommendations').innerHTML = `<h3>Recommendations:</h3><pre>${data.recommendations}</pre>`;
                 results.style.display = 'block';
             } catch (error) {
+                console.error('Error:', error);
                 alert('Error: ' + error.message);
+            } finally {
+                // Reset button state
+                button.textContent = 'Check Accessibility';
+                button.disabled = false;
             }
         });
     </script>
