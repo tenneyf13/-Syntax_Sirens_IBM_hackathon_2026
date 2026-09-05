@@ -3,59 +3,265 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WCAG Checker - Syntax Sirens</title>
+    <title>WCAG Checker — Syntax Sirens</title>
     <link rel="stylesheet" href="/static/Style/awesome.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
-    <div class="container">
-        <h1>WCAG Accessibility Checker</h1>
-        <p>Enter a URL to check for accessibility issues</p>
-        
-        <form id="wcag-form">
-            <input type="url" id="url-input" placeholder="https://example.com" required>
-            <button type="submit">Check Accessibility</button>
-        </form>
-        
-        <div id="results" style="display:none;">
-            <h2>Results</h2>
-            <div id="findings"></div>
-            <div id="recommendations"></div>
+    <header class="site-header">
+        <div class="header-inner">
+            <div class="logo">
+                <span class="logo-icon" aria-hidden="true">♿</span>
+                <span class="logo-text">AccessAI</span>
+            </div>
+            <span class="badge">IBM Hackathon 2026</span>
         </div>
-    </div>
-    
+    </header>
+
+    <main class="main">
+        <section class="hero" aria-labelledby="hero-title">
+            <h1 id="hero-title">WCAG Accessibility Checker</h1>
+            <p class="hero-sub">Paste any URL and get an instant AI-powered accessibility audit against WCAG 2.1 AA standards.</p>
+
+            <form id="wcag-form" class="check-form" novalidate aria-label="Accessibility check form">
+                <div class="input-row">
+                    <label for="url-input" class="sr-only">Website URL</label>
+                    <input
+                        type="url"
+                        id="url-input"
+                        name="url"
+                        placeholder="https://example.com"
+                        autocomplete="url"
+                        required
+                        aria-required="true"
+                        aria-describedby="url-hint"
+                    >
+                    <button type="submit" id="submit-btn">
+                        <span class="btn-text">Check Now</span>
+                        <span class="btn-spinner" aria-hidden="true" hidden></span>
+                    </button>
+                </div>
+                <p id="url-hint" class="input-hint">Enter the full URL including https://</p>
+            </form>
+
+            <div id="error-banner" class="error-banner" role="alert" aria-live="polite" hidden>
+                <span class="error-icon" aria-hidden="true">⚠️</span>
+                <span id="error-message"></span>
+            </div>
+        </section>
+
+        <section id="results" class="results" aria-live="polite" aria-label="Analysis results" hidden>
+            <div class="results-header">
+                <h2>Analysis Results</h2>
+                <span id="results-url" class="results-url"></span>
+                <!-- Score badge -->
+                <span id="score-badge" class="score-badge" aria-label="Accessibility score"></span>
+                <!-- Download button -->
+                <button id="download-btn" class="download-btn" type="button" aria-label="Download report">
+                    ⬇ Download Report
+                </button>
+            </div>
+
+            <div class="results-grid">
+                <article class="result-card findings-card" aria-labelledby="findings-title">
+                    <div class="card-header">
+                        <span class="card-icon" aria-hidden="true">🔍</span>
+                        <h3 id="findings-title">Findings</h3>
+                    </div>
+                    <div id="findings" class="card-body"></div>
+                </article>
+
+                <article class="result-card recommendations-card" aria-labelledby="recs-title">
+                    <div class="card-header">
+                        <span class="card-icon" aria-hidden="true">💡</span>
+                        <h3 id="recs-title">Recommendations</h3>
+                    </div>
+                    <div id="recommendations" class="card-body"></div>
+                </article>
+            </div>
+        </section>
+
+        <section class="features" aria-label="Features">
+            <div class="feature-card">
+                <span class="feature-icon" aria-hidden="true">⚡</span>
+                <h3>Instant Analysis</h3>
+                <p>AI-powered audit in seconds using IBM Watson</p>
+            </div>
+            <div class="feature-card">
+                <span class="feature-icon" aria-hidden="true">📋</span>
+                <h3>WCAG 2.1 AA</h3>
+                <p>Full compliance check against international standards</p>
+            </div>
+            <div class="feature-card">
+                <span class="feature-icon" aria-hidden="true">🛠️</span>
+                <h3>Actionable Fixes</h3>
+                <p>Clear, prioritised recommendations to fix issues</p>
+            </div>
+        </section>
+    </main>
+
+    <footer class="site-footer">
+        <p>Built by <strong>Syntax Sirens</strong> · IBM Hackathon 2026 · Powered by IBM Watson AI</p>
+    </footer>
+
     <script>
-        document.getElementById('wcag-form').addEventListener('submit', async (e) => {
+        const form          = document.getElementById('wcag-form');
+        const submitBtn     = document.getElementById('submit-btn');
+        const btnText       = submitBtn.querySelector('.btn-text');
+        const btnSpinner    = submitBtn.querySelector('.btn-spinner');
+        const resultsSection = document.getElementById('results');
+        const errorBanner   = document.getElementById('error-banner');
+        const errorMessage  = document.getElementById('error-message');
+        const scoreBadge    = document.getElementById('score-badge');
+        const downloadBtn   = document.getElementById('download-btn');
+
+        // Store last result for download
+        let lastResult = null;
+
+        /* ── Loading state ───────────────────────────────────── */
+        function setLoading(loading) {
+            submitBtn.disabled = loading;
+            btnText.textContent = loading ? 'Analyzing…' : 'Check Now';
+            btnSpinner.hidden = !loading;
+            submitBtn.setAttribute('aria-busy', loading);
+        }
+
+        /* ── Error helpers ───────────────────────────────────── */
+        function showError(msg) {
+            errorMessage.textContent = msg;
+            errorBanner.hidden = false;
+            resultsSection.hidden = true;
+        }
+        function hideError() { errorBanner.hidden = true; }
+
+        /* ── Markdown → HTML renderer (no external lib needed) ── */
+        function renderMarkdown(text) {
+            return text
+                // Headings
+                .replace(/^### (.+)$/gm, '<h4>$1</h4>')
+                .replace(/^## (.+)$/gm,  '<h3>$1</h3>')
+                .replace(/^# (.+)$/gm,   '<h2>$1</h2>')
+                // Bold
+                .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+                // Inline code
+                .replace(/`([^`]+)`/g, '<code>$1</code>')
+                // Code blocks
+                .replace(/```[\w]*\n([\s\S]*?)```/g, '<pre><code>$1</code></pre>')
+                // Numbered list items  (1. text)
+                .replace(/^\d+\.\s+(.+)$/gm, '<li>$1</li>')
+                // Bullet list items   (- text or * text)
+                .replace(/^[-*]\s+(.+)$/gm, '<li>$1</li>')
+                // Wrap consecutive <li> in <ol> or <ul>
+                .replace(/(<li>[\s\S]*?<\/li>)(?=\s*<li>|$)/g, (match) => match)
+                // Paragraphs — blank line separated blocks
+                .split(/\n{2,}/)
+                .map(block => {
+                    block = block.trim();
+                    if (!block) return '';
+                    if (/^<(h[2-4]|pre|ul|ol|li)/.test(block)) return block;
+                    // Wrap adjacent <li> tags in a list
+                    if (block.includes('<li>')) return `<ul>${block}</ul>`;
+                    return `<p>${block.replace(/\n/g, '<br>')}</p>`;
+                })
+                .join('');
+        }
+
+        /* ── Score badge ─────────────────────────────────────── */
+        function computeScore(findingsText) {
+            const lower = findingsText.toLowerCase();
+            // Count distinct WCAG criterion references e.g. "1.1.1", "2.4.4"
+            const matches = lower.match(/\d+\.\d+\.\d+/g) || [];
+            const unique  = new Set(matches).size;
+
+            if (unique === 0)      return { label: '✅ Pass',         cls: 'badge-pass',    tip: 'No issues detected' };
+            if (unique <= 3)       return { label: '⚠️ Needs Work',   cls: 'badge-warn',    tip: `${unique} issue(s) found` };
+            return                        { label: '❌ Fail',          cls: 'badge-fail',    tip: `${unique} issues found` };
+        }
+
+        function showScore(findingsText) {
+            const { label, cls, tip } = computeScore(findingsText);
+            scoreBadge.textContent = label;
+            scoreBadge.className   = `score-badge ${cls}`;
+            scoreBadge.title       = tip;
+            scoreBadge.setAttribute('aria-label', `Accessibility score: ${label} — ${tip}`);
+        }
+
+        /* ── Download report ─────────────────────────────────── */
+        function buildReport(url, findings, recommendations) {
+            const line  = '='.repeat(60);
+            const ts    = new Date().toLocaleString();
+            return [
+                'AccessAI — WCAG 2.1 AA Accessibility Report',
+                `Generated: ${ts}`,
+                `URL: ${url}`,
+                line,
+                '',
+                'FINDINGS',
+                line,
+                findings.replace(/<[^>]+>/g, '').trim(),
+                '',
+                'RECOMMENDATIONS',
+                line,
+                recommendations.replace(/<[^>]+>/g, '').trim(),
+                '',
+                line,
+                'Built by Syntax Sirens · IBM Hackathon 2026 · Powered by IBM watsonx.ai',
+            ].join('\n');
+        }
+
+        downloadBtn.addEventListener('click', () => {
+            if (!lastResult) return;
+            const text = buildReport(lastResult.url, lastResult.findings, lastResult.recommendations);
+            const blob = new Blob([text], { type: 'text/plain' });
+            const a    = document.createElement('a');
+            a.href     = URL.createObjectURL(blob);
+            a.download = `wcag-report-${new Date().toISOString().slice(0,10)}.txt`;
+            a.click();
+            URL.revokeObjectURL(a.href);
+        });
+
+        /* ── Form submit ─────────────────────────────────────── */
+        form.addEventListener('submit', async (e) => {
             e.preventDefault();
-            const url = document.getElementById('url-input').value;
-            const results = document.getElementById('results');
-            const button = document.querySelector('button[type="submit"]');
-            
-            // Show loading state
-            button.textContent = 'Analyzing...';
-            button.disabled = true;
-            
+            hideError();
+
+            const url = document.getElementById('url-input').value.trim();
+            document.getElementById('results-url').textContent = url;
+
+            setLoading(true);
+
             try {
                 const response = await fetch('/api/check-wcag', {
                     method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({url: url})
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url })
                 });
-                
+
                 if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                    const err = await response.json().catch(() => ({}));
+                    throw new Error(err.detail || `HTTP ${response.status}: ${response.statusText}`);
                 }
-                
+
                 const data = await response.json();
-                document.getElementById('findings').innerHTML = `<h3>Findings:</h3><pre>${data.findings}</pre>`;
-                document.getElementById('recommendations').innerHTML = `<h3>Recommendations:</h3><pre>${data.recommendations}</pre>`;
-                results.style.display = 'block';
+
+                const findingsHtml       = renderMarkdown(data.findings);
+                const recommendationsHtml = renderMarkdown(data.recommendations);
+
+                document.getElementById('findings').innerHTML        = findingsHtml;
+                document.getElementById('recommendations').innerHTML = recommendationsHtml;
+
+                showScore(data.findings);
+
+                lastResult = { url, findings: findingsHtml, recommendations: recommendationsHtml };
+
+                resultsSection.hidden = false;
+                resultsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
             } catch (error) {
-                console.error('Error:', error);
-                alert('Error: ' + error.message);
+                showError(error.message);
             } finally {
-                // Reset button state
-                button.textContent = 'Check Accessibility';
-                button.disabled = false;
+                setLoading(false);
             }
         });
     </script>

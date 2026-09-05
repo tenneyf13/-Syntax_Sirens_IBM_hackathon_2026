@@ -5,18 +5,34 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, HttpUrl
 import httpx
 import os
+from pathlib import Path
 from dotenv import load_dotenv
 
-# Load environment variables
-load_dotenv()
+# Load environment variables from the .env file next to this script,
+# regardless of what directory uvicorn is started from.
+load_dotenv(dotenv_path=Path(__file__).parent / ".env")
+
+# Browser-like headers to avoid bot-blocking on target sites
+BROWSER_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/124.0.0.0 Safari/537.36"
+    ),
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Cache-Control": "no-cache",
+    "Pragma": "no-cache",
+    "Upgrade-Insecure-Requests": "1",
+}
 
 app = FastAPI(title="WCAG Checker Backend", version="1.0.0")
 
 # Mount static files
 app.mount("/static", StaticFiles(directory="Frontend"), name="static")
 
-# --- CORS: allow your frontend domain to call the backend ---
-# For hackathon, you can allow "*" temporarily. Better: set to your frontend URL.
+# --- CORS ---
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -47,93 +63,24 @@ def health():
 def favicon():
     return {"message": "No favicon"}
 
-@app.get("/doc")
-def doc_redirect():
-    return {"message": "Use /docs for API documentation"}
-
 @app.get("/debug/env")
 def debug_env():
     return {
-        "watson_api_key_set": bool(os.getenv("WATSON_API_KEY")),
         "ibm_cloud_api_key_set": bool(os.getenv("IBM_CLOUD_API_KEY")),
-        "agent_endpoint_set": bool(os.getenv("AGENT_ENDPOINT_URL")),
-        "watson_url": os.getenv("WATSON_URL", "Not set")
+        "watsonx_project_id_set": bool(os.getenv("WATSONX_PROJECT_ID")),
+        "watsonx_url": os.getenv("WATSONX_URL", "Not set"),
     }
-
-@app.get("/debug/watson-test")
-async def test_watson_connection():
-    """Test Watson connection and authentication."""
-    agent_api_key = os.getenv("Agent_API_KEY")
-    ibm_cloud_api_key = os.getenv("IBM_CLOUD_API_KEY")
-    agent_endpoint = os.getenv("AGENT_ENDPOINT_URL")
-    
-    results = {
-        "agent_api_key_set": bool(agent_api_key),
-        "ibm_cloud_api_key_set": bool(ibm_cloud_api_key),
-        "agent_endpoint": agent_endpoint
-    }
-    
-    try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            # Get IBM Cloud access token first
-            if ibm_cloud_api_key:
-                token_data = {
-                    "grant_type": "urn:ibm:params:oauth:grant-type:apikey",
-                    "apikey": ibm_cloud_api_key
-                }
-                
-                token_response = await client.post(
-                    "https://iam.cloud.ibm.com/identity/token",
-                    data=token_data,
-                    headers={"Content-Type": "application/x-www-form-urlencoded"}
-                )
-                
-                results["ibm_token_test"] = {
-                    "status": token_response.status_code,
-                    "success": token_response.status_code == 200,
-                    "response": "Token obtained" if token_response.status_code == 200 else token_response.text[:200]
-                }
-                
-                # If token obtained, test Watson agent with Bearer token
-                if token_response.status_code == 200:
-                    access_token = token_response.json()["access_token"]
-                    
-                    test_payload = {"input": "Test connection"}
-                    
-                    agent_response = await client.post(
-                        agent_endpoint,
-                        json=test_payload,
-                        headers={
-                            "Authorization": f"Bearer {access_token}",
-                            "Content-Type": "application/json"
-                        }
-                    )
-                    
-                    results["agent_auth_test"] = {
-                        "status": agent_response.status_code,
-                        "success": agent_response.status_code == 200,
-                        "response": agent_response.text[:200] if agent_response.status_code != 200 else "Success"
-                    }
-            
-            return results
-            
-    except Exception as e:
-        results["error"] = str(e)
-        return results
 
 @app.get("/items/{item_id}")
 def read_item(item_id: int, q: str = None):
-    return {"item_id": item_id, "q": q, "message": "This is a test endpoint"}
+    return {"item_id": item_id, "q": q}
 
 @app.post("/fetch", response_class=PlainTextResponse)
 async def fetch(req: FetchRequest):
     """Fetch raw HTML for a URL and return it as text/plain."""
     try:
-        async with httpx.AsyncClient(follow_redirects=True, timeout=10) as client:
-            r = await client.get(
-                str(req.url),
-                headers={"User-Agent": "WCAG-Audit-Bot/1.0"}
-            )
+        async with httpx.AsyncClient(follow_redirects=True, timeout=15) as client:
+            r = await client.get(str(req.url), headers=BROWSER_HEADERS)
             r.raise_for_status()
             html = r.content.decode(r.encoding or "utf-8", errors="replace")
             return html
@@ -146,14 +93,13 @@ async def fetch(req: FetchRequest):
 @app.post("/api/check-wcag")
 async def check_wcag(req: CheckWCAGRequest):
     """
-    Called by your frontend. Fetches HTML, runs analysis, returns JSON:
-    { findings: "...", recommendations: "..." }
+    Fetches HTML from the given URL, runs WCAG analysis via watsonx.ai,
+    and returns { findings, recommendations }.
     """
-
-    # 1) Fetch HTML (reuse internal function via HTTP call OR call fetch logic directly)
+    # 1) Fetch the target page HTML
     try:
-        async with httpx.AsyncClient(follow_redirects=True, timeout=10) as client:
-            r = await client.get(str(req.url), headers={"User-Agent": "WCAG-Audit-Bot/1.0"})
+        async with httpx.AsyncClient(follow_redirects=True, timeout=15) as client:
+            r = await client.get(str(req.url), headers=BROWSER_HEADERS)
             r.raise_for_status()
             html = r.content.decode(r.encoding or "utf-8", errors="replace")
     except httpx.HTTPStatusError as e:
@@ -161,97 +107,131 @@ async def check_wcag(req: CheckWCAGRequest):
     except httpx.RequestError:
         raise HTTPException(status_code=502, detail="Network error fetching target URL")
 
-    # 2) Run your AI analysis
-    findings, recommendations = await run_wcag_analysis_watson(html)
+    # 2) Analyse with watsonx.ai
+    findings, recommendations = await run_wcag_analysis_watsonx(html)
 
-    # 3) Return to frontend
-    return {
-        "findings": findings,
-        "recommendations": recommendations
-    }
+    return {"findings": findings, "recommendations": recommendations}
 
 
-async def run_wcag_analysis_watson(html: str):
-    """Analyze HTML using Watson AI for WCAG compliance."""
+async def get_iam_token(client: httpx.AsyncClient) -> str:
+    """Exchange IBM Cloud API key for a short-lived IAM Bearer token."""
     ibm_cloud_api_key = os.getenv("IBM_CLOUD_API_KEY")
-    agent_endpoint = os.getenv("AGENT_ENDPOINT_URL")
-    
-    if not all([ibm_cloud_api_key, agent_endpoint]):
-        return "Missing IBM Cloud API key or agent endpoint.", "Configure IBM_CLOUD_API_KEY and AGENT_ENDPOINT_URL in your .env file."
-    
+    if not ibm_cloud_api_key:
+        raise ValueError("IBM_CLOUD_API_KEY is not set.")
+
+    r = await client.post(
+        "https://iam.cloud.ibm.com/identity/token",
+        data={
+            "grant_type": "urn:ibm:params:oauth:grant-type:apikey",
+            "apikey": ibm_cloud_api_key,
+        },
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+    if r.status_code != 200:
+        raise ValueError(f"IAM token error {r.status_code}: {r.text[:200]}")
+    return r.json()["access_token"]
+
+
+async def run_wcag_analysis_watsonx(html: str):
+    """Analyse HTML using IBM watsonx.ai (ibm/granite-13b-instruct-v2)."""
+    project_id = os.getenv("WATSONX_PROJECT_ID")
+    watsonx_url = os.getenv("WATSONX_URL", "https://us-south.ml.cloud.ibm.com")
+
+    if not project_id:
+        return (
+            "Missing WATSONX_PROJECT_ID.",
+            "Add WATSONX_PROJECT_ID to your .env file."
+        )
+
+    prompt = (
+        "You are an expert web accessibility auditor.\n"
+        "Analyze the HTML below for WCAG 2.1 Level AA compliance issues.\n\n"
+        "Structure your response in TWO clearly labelled sections:\n"
+        "1. FINDINGS: List each accessibility issue found, referencing the specific "
+        "WCAG criterion (e.g. 1.1.1 Non-text Content, 4.1.2 Name, Role, Value).\n"
+        "2. RECOMMENDATIONS: For each finding provide a concrete, actionable fix "
+        "with a corrected code snippet where applicable.\n\n"
+        f"HTML to audit:\n{html[:4000]}\n\n"
+        "Begin your response with 'FINDINGS:'"
+    )
+
     try:
         async with httpx.AsyncClient(timeout=60) as client:
-            # Get IBM Cloud access token
-            token_data = {
-                "grant_type": "urn:ibm:params:oauth:grant-type:apikey",
-                "apikey": ibm_cloud_api_key
-            }
-            
-            token_response = await client.post(
-                "https://iam.cloud.ibm.com/identity/token",
-                data=token_data,
-                headers={"Content-Type": "application/x-www-form-urlencoded"}
-            )
-            
-            if token_response.status_code != 200:
-                return f"Token error: {token_response.status_code} - {token_response.text}", "Failed to get IBM Cloud access token."
-            
-            access_token = token_response.json()["access_token"]
-            
-            # Try primary agent endpoint first
+            access_token = await get_iam_token(client)
+
             payload = {
-                "input": f"Analyze this HTML for WCAG 2.1 AA accessibility compliance. Provide specific findings and recommendations:\n\n{html[:2000]}"
+                "model_id": "meta-llama/llama-3-3-70b-instruct",
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are an expert web accessibility auditor specialising in WCAG 2.1 Level AA. "
+                            "Always structure your response with two clearly labelled sections: "
+                            "FINDINGS: and RECOMMENDATIONS:"
+                        )
+                    },
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ],
+                "parameters": {
+                    "max_new_tokens": 1024,
+                    "temperature": 0.2,
+                },
+                "project_id": project_id,
             }
-            
+
             headers = {
                 "Authorization": f"Bearer {access_token}",
                 "Content-Type": "application/json",
-                "Accept": "application/json"
+                "Accept": "application/json",
             }
-            
-            # Try primary endpoint
-            agent_response = await client.post(agent_endpoint, json=payload, headers=headers)
-            
-            if agent_response.status_code == 200:
-                result = agent_response.json()
-                return parse_watson_response(result)
-            
-            # Try fallback chat endpoint (as seen in logs)
-            fallback_endpoint = agent_endpoint.replace("/agents/", "/api/chat/v1/agents/").replace("/run", "/messages")
-            
-            chat_payload = {
-                "messages": [{
-                    "role": "user",
-                    "content": f"Analyze this HTML for WCAG 2.1 AA accessibility compliance:\n\n{html[:2000]}"
-                }]
-            }
-            
-            fallback_response = await client.post(fallback_endpoint, json=chat_payload, headers=headers)
-            
-            if fallback_response.status_code == 200:
-                result = fallback_response.json()
-                return parse_watson_response(result)
-            
-            # If both fail, return error details
-            return f"Both endpoints failed. Primary: {agent_response.status_code}, Fallback: {fallback_response.status_code}", "Watson agent authentication failed."
-        
+
+            url = f"{watsonx_url}/ml/v1/text/chat?version=2023-05-29"
+            resp = await client.post(url, json=payload, headers=headers)
+
+            if resp.status_code == 200:
+                data = resp.json()
+                text = (
+                    data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                    or data.get("results", [{}])[0].get("generated_text", "")
+                    or str(data)
+                )
+                return _split_findings_recommendations(text)
+
+            # Fallback: try mistral-small
+            payload["model_id"] = "mistralai/mistral-small-3-1-24b-instruct-2503"
+            resp2 = await client.post(url, json=payload, headers=headers)
+            if resp2.status_code == 200:
+                data = resp2.json()
+                text = (
+                    data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                    or str(data)
+                )
+                return _split_findings_recommendations(text)
+
+            return (
+                f"watsonx.ai error ({resp.status_code}): {resp.text[:300]}",
+                "Check WATSONX_PROJECT_ID and WATSONX_URL in your .env file."
+            )
+
+    except ValueError as e:
+        return str(e), "Check your IBM_CLOUD_API_KEY in the .env file."
     except httpx.TimeoutException:
-        return "Watson request timeout.", "The Watson service took too long to respond."
+        return "watsonx.ai request timed out.", "The model took too long. Try again."
     except Exception as e:
-        return f"Watson connection error: {str(e)}", "Unable to connect to Watson services."
+        return f"Unexpected error: {str(e)}", "Check server logs for details."
 
-def parse_watson_response(result):
-    """Parse Watson response in various formats."""
-    if "output" in result:
-        return result["output"], "Analysis completed using Watson AI."
-    elif "result" in result:
-        return result["result"], "Watson AI analysis completed."
-    elif "response" in result:
-        return result["response"], "Watson response received."
-    elif "messages" in result and result["messages"]:
-        last_message = result["messages"][-1]
-        content = last_message.get("content", str(last_message))
-        return content, "Watson chat response received."
-    else:
-        return str(result), "Raw Watson response."
 
+def _split_findings_recommendations(text: str):
+    """Split AI response into (findings, recommendations) at the RECOMMENDATIONS marker."""
+    lower = text.lower()
+    markers = ["2. recommendations", "recommendations:", "recommendation:", "suggested fix",
+               "how to fix", "remediation", "actionable fix"]
+    for marker in markers:
+        idx = lower.find(marker)
+        if idx != -1:
+            return text[:idx].strip(), text[idx:].strip()
+    # No clear split — return full text as findings
+    return text.strip(), "See findings above for detailed recommendations."
